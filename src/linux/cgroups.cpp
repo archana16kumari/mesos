@@ -60,7 +60,7 @@
 
 using namespace process;
 
-// TODO(benh): Move linux/fs.hpp out of 'mesos- namespace.
+using namespace internal::fs;
 using namespace mesos::internal;
 
 using std::list;

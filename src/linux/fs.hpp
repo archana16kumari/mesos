@@ -31,7 +31,6 @@
 #include <stout/try.hpp>
 
 
-namespace mesos {
 namespace internal {
 namespace fs {
 
@@ -143,7 +142,6 @@ Try<Nothing> unmount(const std::string& target, int flags = 0);
 
 } // namespace fs {
 } // namespace internal {
-} // namespace mesos {
 
 
 #endif // __FS_HPP__
