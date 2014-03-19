@@ -105,7 +105,7 @@ public:
       int result = sasl_client_init(NULL);
       if (result != SASL_OK) {
         status = ERROR;
-        std::string error(sasl_errstring(result, NULL, NULL));
+        const std::string& error(sasl_errstring(result, NULL, NULL));
         promise.fail("Failed to initialize SASL: " + error);
         initialize->done();
         return promise.future();
@@ -165,7 +165,7 @@ public:
 
     if (result != SASL_OK) {
       status = ERROR;
-      std::string error(sasl_errstring(result, NULL, NULL));
+      const std::string& error(sasl_errstring(result, NULL, NULL));
       promise.fail("Failed to create client SASL connection: " + error);
       return promise.future();
     }
@@ -236,7 +236,7 @@ protected:
       << "Not expecting an interaction (ID: " << interact->id << ")";
 
     if (result != SASL_OK && result != SASL_CONTINUE) {
-      std::string error(sasl_errdetail(connection));
+       const std::string& error(sasl_errdetail(connection));
       status = ERROR;
       promise.fail("Failed to start the SASL client: " + error);
       return;
@@ -289,7 +289,7 @@ protected:
       reply(message);
     } else {
       status = ERROR;
-      std::string error(sasl_errdetail(connection));
+      const std::string& error(sasl_errdetail(connection));
       promise.fail("Failed to perform authentication step: " + error);
     }
   }
