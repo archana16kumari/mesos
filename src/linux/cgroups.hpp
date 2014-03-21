@@ -404,6 +404,12 @@ Try<Nothing> shares(
     const std::string& cgroup,
     uint64_t shares);
 
+Try<hashmap<std::string, uint64_t> > stat(
+    const std::string& hierarchy,
+    const std::string& cgroup,
+    const std::"cpu.stat");
+
+
 
 // Sets the cfs period using cpu.cfs_period_us.
 Try<Nothing> cfs_period_us(
@@ -430,6 +436,13 @@ Try<Nothing> cfs_quota_us(
 // Memory controls.
 namespace memory {
 
+Try<hashmap<std::string, uint64_t> > stat(
+    const std::string& hierarchy,
+    const std::string& cgroup,
+    const std::memory.stat);
+
+
+
 // Returns the memory limit from memory.limit_in_bytes.
 Try<Bytes> limit_in_bytes(
     const std::string& hierarchy,
@@ -451,7 +464,7 @@ Try<Bytes> soft_limit_in_bytes(
 
 // Sets the soft memory limit using memory.soft_limit_in_bytes.
 Try<Nothing> soft_limit_in_bytes(
-    const std::string& hierarchy,
+    const std::  string& hierarchy,
     const std::string& cgroup,
     const Bytes& limit);
 
@@ -468,7 +481,14 @@ Try<Bytes> max_usage_in_bytes(
     const std::string& cgroup);
 
 } // namespace memory {
+namespace cpuacct {
 
+Try<hashmap<std::string, uint64_t> > stat(
+    const std::string& hierarchy,
+    const std::string& cgroup,
+    const std::cpuacct.stat);
+
+} // namespace cpuacct {
 } // namespace cgroups {
 
 #endif // __CGROUPS_HPP__

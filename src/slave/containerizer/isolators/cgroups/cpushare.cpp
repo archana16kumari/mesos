@@ -376,7 +376,7 @@ Future<ResourceStatistics> CgroupsCpushareIsolatorProcess::usage(
 
   // Add the cpuacct.stat information.
   Try<hashmap<string, uint64_t> > stat =
-    cgroups::stat(hierarchies["cpuacct"], info->cgroup, "cpuacct.stat");
+    cgroups::cpuacct::stat(hierarchies, info->cgroup);
 
   if (stat.isError()) {
     return Failure("Failed to read cpuacct.stat: " + stat.error());
@@ -393,7 +393,7 @@ Future<ResourceStatistics> CgroupsCpushareIsolatorProcess::usage(
   }
 
   // Add the cpu.stat information.
-  stat = cgroups::stat(hierarchies["cpu"], info->cgroup, "cpu.stat");
+  stat = cgroups::cpu::stat(hierarchies, info->cgroup);
 
   if (stat.isError()) {
     return Failure("Failed to read cpu.stat: " + stat.error());

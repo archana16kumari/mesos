@@ -72,6 +72,26 @@ using std::vector;
 namespace cgroups {
 namespace internal {
 
+cgroups::cpuacct::stat(const std::string& hierarchy, const std::string& cgroup) { 	
+
+	stat(heirarchy, cgroup, "cpuacct.stat");
+
+}
+
+cgroups::cpu::stat(const std::string& hierarchy, const std::string& cgroup)
+ {
+
+	stat(heirarchy, cgroup, "cpu.stat");	
+
+}
+
+cgroups::memory::stat(const std::string& hierarchy, const std::string& cgroup)
+
+{
+
+	stat(heirarchy, cgroup, "memory.stat"); 	
+
+}
 // Snapshot of a subsystem (modeled after a line in /proc/cgroups).
 struct SubsystemInfo
 {

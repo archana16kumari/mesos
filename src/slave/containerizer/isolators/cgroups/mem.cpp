@@ -332,7 +332,7 @@ Future<ResourceStatistics> CgroupsMemIsolatorProcess::usage(
   result.set_mem_rss_bytes(usage.get().bytes());
 
   Try<hashmap<string, uint64_t> > stat =
-    cgroups::stat(hierarchy, info->cgroup, "memory.stat");
+    cgroups::memory::stat(hierarchy, info->cgroup);
 
   if (stat.isError()) {
     return Failure("Failed to read memory.stat: " + stat.error());
