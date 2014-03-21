@@ -38,7 +38,6 @@
 using namespace process;
 
 using std::string;
-using std::vector;
 
 namespace mesos {
 namespace internal {
@@ -64,8 +63,8 @@ public:
   // See comments in 'coordinator.hpp'.
   Future<Option<uint64_t> > elect();
   Future<uint64_t> demote();
-  Future<uint64_t> append(const string& bytes);
-  Future<uint64_t> truncate(uint64_t to);
+  Future<Option<uint64_t> > append(const string& bytes);
+  Future<Option<uint64_t> > truncate(uint64_t to);
 
 protected:
   virtual void finalize()
@@ -83,8 +82,8 @@ private:
   Future<Nothing> updateProposal(uint64_t promised);
   Future<PromiseResponse> runPromisePhase();
   Future<Option<uint64_t> > checkPromisePhase(const PromiseResponse& response);
-  Future<vector<uint64_t> > getMissingPositions();
-  Future<Nothing> catchupMissingPositions(const vector<uint64_t>& positions);
+  Future<IntervalSet<uint64_t> > getMissingPositions();
+  Future<Nothing> catchupMissingPositions(const IntervalSet<uint64_t>& positions);
   Future<Option<uint64_t> > updateIndexAfterElected();
   void electingFinished(const Option<uint64_t>& position);
   void electingFailed();
@@ -94,12 +93,14 @@ private:
   // Writing related functions.  //
   /////////////////////////////////
 
-  Future<uint64_t> write(const Action& action);
+  Future<Option<uint64_t> > write(const Action& action);
   Future<WriteResponse> runWritePhase(const Action& action);
-  Future<Nothing> checkWritePhase(const WriteResponse& response);
+  Future<Option<uint64_t> > checkWritePhase(
+      const Action& action,
+      const WriteResponse& response);
   Future<Nothing> runLearnPhase(const Action& action);
   Future<bool> checkLearnPhase(const Action& action);
-  Future<uint64_t> updateIndexAfterWritten(bool missing);
+  Future<Option<uint64_t> > updateIndexAfterWritten(bool missing);
   void writingFinished();
   void writingFailed();
   void writingAborted();
@@ -130,7 +131,7 @@ private:
   uint64_t index;
 
   Future<Option<uint64_t> > electing;
-  Future<uint64_t> writing;
+  Future<Option<uint64_t> > writing;
 };
 
 
@@ -142,9 +143,9 @@ private:
 Future<Option<uint64_t> > CoordinatorProcess::elect()
 {
   if (state == ELECTING) {
-    return Failure("Coordinator already being elected");
+    return electing;
   } else if (state == ELECTED) {
-    return Failure("Coordinator already elected");
+    return index - 1; // The last learned position!
   } else if (state == WRITING) {
     return Failure("Coordinator already elected, and is currently writing");
   }
@@ -216,14 +217,14 @@ Future<Option<uint64_t> > CoordinatorProcess::checkPromisePhase(
 }
 
 
-Future<vector<uint64_t> > CoordinatorProcess::getMissingPositions()
+Future<IntervalSet<uint64_t> > CoordinatorProcess::getMissingPositions()
 {
   return replica->missing(0, index);
 }
 
 
 Future<Nothing> CoordinatorProcess::catchupMissingPositions(
-    const vector<uint64_t>& positions)
+    const IntervalSet<uint64_t>& positions)
 {
   LOG(INFO) << "Coordinator attemping to fill missing position";
 
@@ -285,12 +286,10 @@ Future<uint64_t> CoordinatorProcess::demote()
 /////////////////////////////////////////////////
 
 
-Future<uint64_t> CoordinatorProcess::append(const string& bytes)
+Future<Option<uint64_t> > CoordinatorProcess::append(const string& bytes)
 {
-  if (state == INITIAL) {
-    return Failure("Coordinator is not elected");
-  } else if (state == ELECTING) {
-    return Failure("Coordinator is being elected");
+  if (state == INITIAL || state == ELECTING) {
+    return None();
   } else if (state == WRITING) {
     return Failure("Coordinator is currently writing");
   }
@@ -307,12 +306,10 @@ Future<uint64_t> CoordinatorProcess::append(const string& bytes)
 }
 
 
-Future<uint64_t> CoordinatorProcess::truncate(uint64_t to)
+Future<Option<uint64_t> > CoordinatorProcess::truncate(uint64_t to)
 {
-  if (state == INITIAL) {
-    return Failure("Coordinator is not elected");
-  } else if (state == ELECTING) {
-    return Failure("Coordinator is being elected");
+  if (state == INITIAL || state == ELECTING) {
+    return None();
   } else if (state == WRITING) {
     return Failure("Coordinator is currently writing");
   }
@@ -329,7 +326,7 @@ Future<uint64_t> CoordinatorProcess::truncate(uint64_t to)
 }
 
 
-Future<uint64_t> CoordinatorProcess::write(const Action& action)
+Future<Option<uint64_t> > CoordinatorProcess::write(const Action& action)
 {
   LOG(INFO) << "Coordinator attempting to write " << action.type()
             << " action at position " << action.position();
@@ -340,10 +337,7 @@ Future<uint64_t> CoordinatorProcess::write(const Action& action)
   state = WRITING;
 
   writing = runWritePhase(action)
-    .then(defer(self(), &Self::checkWritePhase, lambda::_1))
-    .then(defer(self(), &Self::runLearnPhase, action))
-    .then(defer(self(), &Self::checkLearnPhase, action))
-    .then(defer(self(), &Self::updateIndexAfterWritten, lambda::_1))
+    .then(defer(self(), &Self::checkWritePhase, action, lambda::_1))
     .onReady(defer(self(), &Self::writingFinished))
     .onFailed(defer(self(), &Self::writingFailed))
     .onDiscarded(defer(self(), &Self::writingAborted));
@@ -358,18 +352,21 @@ Future<WriteResponse> CoordinatorProcess::runWritePhase(const Action& action)
 }
 
 
-Future<Nothing> CoordinatorProcess::checkWritePhase(
+Future<Option<uint64_t> > CoordinatorProcess::checkWritePhase(
+    const Action& action,
     const WriteResponse& response)
 {
-   if (!response.okay()) {
+  if (!response.okay()) {
     // Received a NACK. Save the proposal number.
     CHECK_LE(proposal, response.proposal());
     proposal = response.proposal();
 
-    return Failure("Coordinator demoted");
-  } else {
-    return Nothing();
+    return None();
   }
+
+  return runLearnPhase(action)
+    .then(defer(self(), &Self::checkLearnPhase, action))
+    .then(defer(self(), &Self::updateIndexAfterWritten, lambda::_1));
 }
 
 
@@ -388,7 +385,8 @@ Future<bool> CoordinatorProcess::checkLearnPhase(const Action& action)
 }
 
 
-Future<uint64_t> CoordinatorProcess::updateIndexAfterWritten(bool missing)
+Future<Option<uint64_t> > CoordinatorProcess::updateIndexAfterWritten(
+    bool missing)
 {
   CHECK(!missing) << "Not expecting local replica to be missing position "
                   << index << " after the writing is done";
@@ -458,13 +456,13 @@ Future<uint64_t> Coordinator::demote()
 }
 
 
-Future<uint64_t> Coordinator::append(const string& bytes)
+Future<Option<uint64_t> > Coordinator::append(const string& bytes)
 {
   return dispatch(process, &CoordinatorProcess::append, bytes);
 }
 
 
-Future<uint64_t> Coordinator::truncate(uint64_t to)
+Future<Option<uint64_t> > Coordinator::truncate(uint64_t to)
 {
   return dispatch(process, &CoordinatorProcess::truncate, to);
 }

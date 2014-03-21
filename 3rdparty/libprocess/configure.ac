@@ -70,9 +70,9 @@ AC_ARG_WITH([zlib],
             [], [with_zlib=yes])
 
 AC_ARG_WITH([cxx11],
-            AS_HELP_STRING([--with-cxx11],
-                           [builds libprocess using C++11]),
-            [], [with_cxx11=no])
+            AS_HELP_STRING([--without-cxx11],
+                           [builds libprocess without C++11 support (deprecated)]),
+            [], [with_cxx11=yes])
 
 
 # Do some OS specific setup.
@@ -122,9 +122,44 @@ AC_LANG_POP([C++])
 AC_MSG_RESULT([$CLANG])
 AC_SUBST([CLANG])
 
-# Force C++11 if we're using clang.
+# Force enable C++11 if compiling with clang.
+# Force disable C++11 if compiling with g++-4.7.
 if test "x$CLANG" = "xyes"; then
+  if test "x$with_cxx11" != "xyes"; then
+    AC_MSG_WARN([Force enabling C++11 for Clang build])
+  fi
   with_cxx11=yes
+else
+  # Check the version of gcc and add any flags as appropriate. Note
+  # that '-dumpversion' works for clang as well but as of clang 3.3 it
+  # reports version 4.2.1 (for gcc backwards compatibility).
+  GCC_VERSION="`${CC} -dumpversion`"
+  AC_MSG_NOTICE([GCC version: $GCC_VERSION])
+  test $? = 0 || AC_MSG_ERROR([failed to determine version of gcc])
+
+  # Check for GCC version 4.8.
+  AX_COMPARE_VERSION([$GCC_VERSION], [eq2], [4.8],
+                     [is_gxx48=yes], [is_gxx48=no])
+  if test "x$is_gxx48" = "xyes"; then
+    AC_MSG_NOTICE([Setting up CXXFLAGS for g++-4.8])
+    # Boost 1.53.0 fails to compile with GCC 4.8 without
+    # -Wno-unused-local-typedefs, and automake does not recognize the
+    # flag.
+    # TODO(brenden): Remove this when Boost has a resolution.
+    CFLAGS="${CFLAGS} -Wno-unused-local-typedefs"
+    CXXFLAGS="${CXXFLAGS} -Wno-unused-local-typedefs"
+  fi
+
+  # Check for GCC version == 4.7 and disable C++11. The C++11 version
+  # of libprocess' Future uses features that 4.7 doesn't support. The
+  # non-C++11 version of libprocess' Future uses std::tr1 code that is
+  # only available without-cxx11.
+  AX_COMPARE_VERSION([$GCC_VERSION], [eq2], [4.7],
+                     [is_gxx47=yes], [is_gxx47=no])
+  if test "x$is_gxx47" = "xyes"; then
+    AC_MSG_WARN([Force disabling C++11 for g++-4.7 build])
+    with_cxx11=no
+  fi
 fi
 
 
@@ -158,12 +193,13 @@ if test "x$with_cxx11" = "xyes"; then
     if test "x$CLANG" = "xyes"; then
       CXXFLAGS="$CXXFLAGS -stdlib=libc++"
     fi
+
+    # GTEST on OSX needs its own tr1 tuple.
+    # TODO(dhamon): Update to gmock 1.7 and pass GTEST_LANG_CXX11 when in
+    # c++11 mode.
+    CXXFLAGS="$CXXFLAGS -DGTEST_USE_OWN_TR1_TUPLE=1"
     ;;
   esac
-
-  # Force gtest to use it's own tuple implementation since 'tr1/tuple'
-  # might not exist (for example, if building with clang).
-  CXXFLAGS="-DGTEST_USE_OWN_TR1_TUPLE=1 $CXXFLAGS"
 
   # Also pass the flags to 3rdparty libraries.
   CONFIGURE_ARGS="$CONFIGURE_ARGS CXXFLAGS='$CXXFLAGS'"

@@ -35,6 +35,7 @@
 #include <stout/foreach.hpp>
 #include <stout/lambda.hpp>
 #include <stout/nothing.hpp>
+#include <stout/unreachable.hpp>
 
 #include "logging/logging.hpp"
 
@@ -288,7 +289,7 @@ private:
         return pids.size() >= size;
       default:
         LOG(FATAL) << "Invalid watch mode";
-        break;
+        return UNREACHABLE();
     }
   }
 
@@ -399,7 +400,7 @@ inline void ZooKeeperNetwork::watched(
     LOG(FATAL) << "Failed to watch ZooKeeper group: " << memberships.failure();
   }
 
-  CHECK(memberships.isReady()); // Not expecting Group to discard futures.
+  CHECK_READY(memberships);  // Not expecting Group to discard futures.
 
   LOG(INFO) << "ZooKeeper group memberships changed";
 
@@ -428,7 +429,7 @@ inline void ZooKeeperNetwork::collected(
     return;
   }
 
-  CHECK(datas.isReady()); // Not expecting collect to discard futures.
+  CHECK_READY(datas);  // Not expecting collect to discard futures.
 
   std::set<process::UPID> pids;
 

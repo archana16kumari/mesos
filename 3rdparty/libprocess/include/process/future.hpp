@@ -128,7 +128,7 @@ public:
 
   // Return the value associated with this future, waits indefinitely
   // until a value gets associated or until the future is discarded.
-  T get() const;
+  const T& get() const;
 
   // Returns the failure message associated with this future.
   std::string failure() const;
@@ -598,7 +598,8 @@ void discard(WeakFuture<T> reference)
 {
   Option<Future<T> > future = reference.get();
   if (future.isSome()) {
-    future.get().discard();
+    Future<T> future_ = future.get();
+    future_.discard();
   }
 }
 
@@ -742,6 +743,7 @@ struct unwrap<Future<X> >
 
 inline void acquire(int* lock)
 {
+  // TODO(dhamon): std::atomic when C++11 rolls out.
   while (!__sync_bool_compare_and_swap(lock, 0, 1)) {
     asm volatile ("pause");
   }
@@ -750,6 +752,7 @@ inline void acquire(int* lock)
 
 inline void release(int* lock)
 {
+  // TODO(dhamon): std::atomic when C++11 rolls out.
   // Unlock via a compare-and-swap so we get a memory barrier too.
   bool unlocked = __sync_bool_compare_and_swap(lock, 1, 0);
   assert(unlocked);
@@ -1079,22 +1082,17 @@ bool Future<T>::await(const Duration& duration) const
 
 
 template <typename T>
-T Future<T>::get() const
+const T& Future<T>::get() const
 {
   if (!isReady()) {
     await();
   }
 
   CHECK(!isPending()) << "Future was in PENDING after await()";
-
+  // We can't use CHECK_READY here due to check.hpp depending on future.hpp.
   if (!isReady()) {
-    if (isFailed()) {
-      std::cerr << "Future::get() but state == FAILED: "
-                << failure()  << std::endl;
-    } else if (isDiscarded()) {
-      std::cerr << "Future::get() but state == DISCARDED" << std::endl;
-    }
-    abort();
+    CHECK(!isFailed()) << "Future::get() but state == FAILED: " << failure();
+    CHECK(!isDiscarded()) << "Future::get() but state == DISCARDED";
   }
 
   assert(data->t != NULL);

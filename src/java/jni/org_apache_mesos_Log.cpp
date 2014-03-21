@@ -19,7 +19,7 @@
 #include <jni.h>
 #include <stdint.h>
 
-#include <process/timeout.hpp>
+#include <process/future.hpp>
 
 #include <stout/check.hpp>
 #include <stout/duration.hpp>
@@ -153,20 +153,24 @@ JNIEXPORT jobject JNICALL Java_org_apache_mesos_Log_00024Reader_read
 
   jlong jseconds = env->CallLongMethod(junit, toSeconds, jtimeout);
 
-  Result<std::list<Log::Entry> > entries =
-    reader->read(from, to, Timeout::in(Seconds(jseconds)));
+  Future<std::list<Log::Entry> > entries = reader->read(from, to);
 
-  if (entries.isError()) {
-    clazz = env->FindClass("org/apache/mesos/Log$OperationFailedException");
-    env->ThrowNew(clazz, entries.error().c_str());
-    return NULL;
-  } else if (entries.isNone()) {
+  if (!entries.await(Seconds(jseconds))) {
+    // Timed out while trying to read the log.
+    entries.discard();
     clazz = env->FindClass("java/util/concurrent/TimeoutException");
     env->ThrowNew(clazz, "Timed out while attempting to read");
     return NULL;
+  } else if (!entries.isReady()) {
+    // Failed to read the log.
+    clazz = env->FindClass("org/apache/mesos/Log$OperationFailedException");
+    env->ThrowNew(
+        clazz,
+        (entries.isFailed()
+         ? entries.failure().c_str()
+         : "Discarded future"));
+    return NULL;
   }
-
-  CHECK_SOME(entries);
 
   // List entries = new ArrayList();
   clazz = env->FindClass("java/util/ArrayList");
@@ -201,9 +205,10 @@ JNIEXPORT jobject JNICALL Java_org_apache_mesos_Log_00024Reader_beginning
 
   Log::Reader* reader = (Log::Reader*) env->GetLongField(thiz, __reader);
 
-  Log::Position position = reader->beginning();
+  Future<Log::Position> position = reader->beginning();
 
-  return convert<Log::Position>(env, position);
+  // TODO(benh): Don't wait forever for 'position'!
+  return convert<Log::Position>(env, position.get());
 }
 
 
@@ -222,9 +227,10 @@ JNIEXPORT jobject JNICALL Java_org_apache_mesos_Log_00024Reader_ending
 
   Log::Reader* reader = (Log::Reader*) env->GetLongField(thiz, __reader);
 
-  Log::Position position = reader->ending();
+  Future<Log::Position> position = reader->ending();
 
-  return convert(env, position);
+  // TODO(benh): Don't wait forever for 'position'!
+  return convert<Log::Position>(env, position.get());
 }
 
 
@@ -302,24 +308,38 @@ JNIEXPORT jobject JNICALL Java_org_apache_mesos_Log_00024Writer_append
 
   jlong jseconds = env->CallLongMethod(junit, toSeconds, jtimeout);
 
-  Result<Log::Position> position =
-    writer->append(data, Timeout::in(Seconds(jseconds)));
+  Future<Option<Log::Position> > position = writer->append(data);
 
-  env->ReleaseByteArrayElements(jdata, temp, 0);
-
-  if (position.isError()) {
-    clazz = env->FindClass("org/apache/mesos/Log$WriterFailedException");
-    env->ThrowNew(clazz, position.error().c_str());
-    return NULL;
-  } else if (position.isNone()) {
+  if (!position.await(Seconds(jseconds))) {
+    // Timed out while trying to append the log.
+    position.discard();
+    env->ReleaseByteArrayElements(jdata, temp, 0);
     clazz = env->FindClass("java/util/concurrent/TimeoutException");
     env->ThrowNew(clazz, "Timed out while attempting to append");
     return NULL;
+  } else if (!position.isReady()) {
+    // Failed to append the log.
+    env->ReleaseByteArrayElements(jdata, temp, 0);
+    clazz = env->FindClass("org/apache/mesos/Log$WriterFailedException");
+    env->ThrowNew(
+        clazz,
+        (position.isFailed()
+         ? position.failure().c_str()
+         : "Discarded future"));
+    return NULL;
+  } else if (position.get().isNone()) {
+    // Lost exclusive write promise.
+    env->ReleaseByteArrayElements(jdata, temp, 0);
+    clazz = env->FindClass("org/apache/mesos/Log$WriterFailedException");
+    env->ThrowNew(
+        clazz,
+        "Exclusive write promise lost");
+    return NULL;
   }
 
-  CHECK_SOME(position);
+  env->ReleaseByteArrayElements(jdata, temp, 0);
 
-  jobject jposition = convert(env, position.get());
+  jobject jposition = convert<Log::Position>(env, position.get().get());
 
   return jposition;
 }
@@ -354,22 +374,33 @@ JNIEXPORT jobject JNICALL Java_org_apache_mesos_Log_00024Writer_truncate
 
   jlong jseconds = env->CallLongMethod(junit, toSeconds, jtimeout);
 
-  Result<Log::Position> position =
-    writer->truncate(to, Timeout::in(Seconds(jseconds)));
+  Future<Option<Log::Position> > position = writer->truncate(to);
 
-  if (position.isError()) {
-    clazz = env->FindClass("org/apache/mesos/Log$WriterFailedException");
-    env->ThrowNew(clazz, position.error().c_str());
-    return NULL;
-  } else if (position.isNone()) {
+  if (!position.await(Seconds(jseconds))) {
+    // Timed out while trying to truncate the log.
+    position.discard();
     clazz = env->FindClass("java/util/concurrent/TimeoutException");
     env->ThrowNew(clazz, "Timed out while attempting to truncate");
     return NULL;
+  } else if (!position.isReady()) {
+    // Failed to truncate the log.
+    clazz = env->FindClass("org/apache/mesos/Log$WriterFailedException");
+    env->ThrowNew(
+        clazz,
+        (position.isFailed()
+         ? position.failure().c_str()
+         : "Discarded future"));
+    return NULL;
+  } else if (position.get().isNone()) {
+    // Lost exclusive write promise.
+    clazz = env->FindClass("org/apache/mesos/Log$WriterFailedException");
+    env->ThrowNew(
+        clazz,
+        "Exclusive write promise lost");
+    return NULL;
   }
 
-  CHECK_SOME(position);
-
-  jobject jposition = convert(env, position.get());
+  jobject jposition = convert<Log::Position>(env, position.get().get());
 
   return jposition;
 }
@@ -412,12 +443,29 @@ JNIEXPORT void JNICALL Java_org_apache_mesos_Log_00024Writer_initialize
   int retries = jretries;
 
   // Create the C++ Log::Writer and initialize the __writer variable.
-  Log::Writer* writer = new Log::Writer(log, seconds, retries);
+  Log::Writer* writer = new Log::Writer(log);
 
   clazz = env->GetObjectClass(thiz);
 
   jfieldID __writer = env->GetFieldID(clazz, "__writer", "J");
   env->SetLongField(thiz, __writer, (jlong) writer);
+
+  // Try to start the writer.
+  while (retries-- > 0) {
+    Future<Option<Log::Position> > position = writer->start();
+
+    if (!position.await(seconds)) {
+      // Cancel the pending start. It is likely that we'll retry right
+      // away but that is safe.
+      position.discard();
+    } else if (position.isReady() && position.get().isSome()) {
+      // Started!
+      break;
+    }
+
+    // Either starting failed or was discarded, either way, retry!
+    // TODO(benh): Do we really want to retry on a failure?
+  }
 }
 
 

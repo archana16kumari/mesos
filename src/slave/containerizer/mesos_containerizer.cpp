@@ -53,6 +53,43 @@ using state::RunState;
 Future<Nothing> _nothing() { return Nothing(); }
 
 
+// Helper method to build the command sent to the fetcher.
+std::string buildCommand(
+    const CommandInfo& commandInfo,
+    const std::string& directory,
+    const Option<std::string>& user,
+    const Flags& flags)
+{
+  // Prepare the environment variables to pass to mesos-fetcher.
+  string uris = "";
+  foreach (const CommandInfo::URI& uri, commandInfo.uris()) {
+    uris += uri.value() + "+" +
+            (uri.has_executable() && uri.executable() ? "1" : "0");
+    uris += " ";
+  }
+  // Remove extra space at the end.
+  uris = strings::trim(uris);
+
+  // Use /usr/bin/env to set the environment variables for the fetcher
+  // subprocess because we cannot pollute the slave's environment.
+  // TODO(idownes): Remove this once Subprocess accepts environment variables.
+  string command = "/usr/bin/env";
+  command += " MESOS_EXECUTOR_URIS=\"" + uris + "\"";
+  command += " MESOS_WORK_DIRECTORY=" + directory;
+  if (user.isSome()) {
+    command += " MESOS_USER=" + user.get();
+  }
+  if (!flags.frameworks_home.empty()) {
+    command += " MESOS_FRAMEWORKS_HOME=" + flags.frameworks_home;
+  }
+  if (!flags.hadoop_home.empty()) {
+    command += " HADOOP_HOME=" + flags.hadoop_home;
+  }
+
+  return command;
+}
+
+
 MesosContainerizer::MesosContainerizer(
     const Flags& flags,
     bool local,
@@ -157,18 +194,18 @@ Future<Nothing> MesosContainerizerProcess::recover(
 
         // We are only interested in the latest run of the executor!
         const ContainerID& containerId = executor.latest.get();
-        CHECK(executor.runs.contains(containerId));
-        const RunState& run = executor.runs.get(containerId).get();
+        Option<RunState> run = executor.runs.get(containerId);
+        CHECK_SOME(run);
 
         // We need the pid so the reaper can monitor the executor so skip this
         // executor if it's not present. This is not an error because the slave
         // will try to wait on the container which will return a failed
         // Termination and everything will get cleaned up.
-        if (!run.forkedPid.isSome()) {
+        if (!run.get().forkedPid.isSome()) {
           continue;
         }
 
-        if (run.completed) {
+        if (run.get().completed) {
           VLOG(1) << "Skipping recovery of executor '" << executor.id
                   << "' of framework " << framework.id
                   << " because its latest run "
@@ -180,7 +217,7 @@ Future<Nothing> MesosContainerizerProcess::recover(
                   << "' for executor '" << executor.id
                   << "' of framework " << framework.id;
 
-        recoverable.push_back(run);
+        recoverable.push_back(run.get());
       }
     }
   }
@@ -229,18 +266,6 @@ Future<Nothing> MesosContainerizerProcess::_recover(
 }
 
 
-// Log the message and then exit(1) in an async-signal-safe manner.
-// TODO(idownes): Move this into stout, possibly replacing its fatal(), and
-// support multiple messages to write out.
-void asyncSafeFatal(const char* message)
-{
-  // Ignore the return value from write() to silence compiler warning.
-  while (write(STDERR_FILENO, message, strlen(message)) == -1 &&
-      errno == EINTR);
-  _exit(1);
-}
-
-
 // This function is executed by the forked child and should be
 // async-signal-safe.
 // TODO(idownes): Several functions used here are not actually
@@ -267,7 +292,7 @@ int execute(
 
   if (len != sizeof(buf)) {
     os::close(pipeRead);
-    asyncSafeFatal("Failed to synchronize with parent");
+    ABORT("Failed to synchronize with parent");
   }
   os::close(pipeRead);
 
@@ -275,18 +300,18 @@ int execute(
   if (user.isSome()) {
     Try<Nothing> chown = os::chown(user.get(), directory);
     if (chown.isError()) {
-      asyncSafeFatal("Failed to chown work directory");
+      ABORT("Failed to chown work directory");
     }
   }
 
   // Change user if provided.
   if (user.isSome() && !os::su(user.get())) {
-    asyncSafeFatal("Failed to change user");
+    ABORT("Failed to change user");
   }
 
   // Enter working directory.
   if (os::chdir(directory) < 0) {
-    asyncSafeFatal("Failed to chdir into work directory");
+    ABORT("Failed to chdir into work directory");
   }
 
   // First set up any additional environment variables.
@@ -312,10 +337,10 @@ int execute(
   // directly.
   if (redirectIO) {
     if (freopen("stdout", "a", stdout) == NULL) {
-      asyncSafeFatal("freopen failed");
+      ABORT("freopen failed");
     }
     if (freopen("stderr", "a", stderr) == NULL) {
-      asyncSafeFatal("freopen failed");
+      ABORT("freopen failed");
     }
   }
 
@@ -323,7 +348,7 @@ int execute(
   execl("/bin/sh", "sh", "-c", command.value().c_str(), (char*) NULL);
 
   // If we get here, the execv call failed.
-  asyncSafeFatal("Failed to execute command");
+  ABORT("Failed to execute command");
 
   // This should not be reached.
   return -1;
@@ -476,27 +501,7 @@ Future<Nothing> MesosContainerizerProcess::fetch(
     return Failure("Could not fetch URIs: failed to find mesos-fetcher");
   }
 
-  // Prepare the environment variables to pass to mesos-fetcher.
-  string uris = "";
-  foreach (const CommandInfo::URI& uri, commandInfo.uris()) {
-    uris += uri.value() + "+" +
-            (uri.has_executable() && uri.executable() ? "1" : "0");
-    uris += " ";
-  }
-  // Remove extra space at the end.
-  uris = strings::trim(uris);
-
-  // Use /usr/bin/env to set the environment variables for the fetcher
-  // subprocess because we cannot pollute the slave's environment.
-  // TODO(idownes): Remove this once Subprocess accepts environment variables.
-  string command = "/usr/bin/env";
-  command += " MESOS_EXECUTOR_URIS=" + uris;
-  command += " MESOS_WORK_DIRECTORY=" + directory;
-  if (user.isSome()) {
-    command += " MESOS_USER=" + user.get();
-  }
-  command += " MESOS_FRAMEWORKS_HOME=" + flags.frameworks_home;
-  command += " HADOOP_HOME=" + flags.hadoop_home;
+  string command = buildCommand(commandInfo, directory, user, flags);
 
   // Now the actual mesos-fetcher command.
   command += " " + realpath.get();

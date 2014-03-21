@@ -6,11 +6,13 @@ layout: documentation
 
 ## Organizations using Mesos
 
+* [Atlassian](http://www.atlassian.com)
 * [Atigeo](http://www.atigeo.com)
 * [Airbnb](http://www.airbnb.com)
 * [Categorize](http://categorize.co)
 * [CloudPhysics](http://cloudphysics.com)
 * [Conviva](http://www.conviva.com)
+* [eBay](http://www.ebay.com)
 * [Devicescape](http://www.devicescape.com)
 * [DueDil](http://www.duedil.com)
 * [HubSpot](http://www.hubspot.com)
@@ -19,6 +21,7 @@ layout: documentation
 * [Medidata Solutions](http://www.mdsol.com)
 * [MediaCrossing](http://www.mediacrossing.com)
 * [OpenTable](http://www.opentable.com)
+* [PayPal](https://www.paypal.com)
 * [Pinkbike](http://www.pinkbike.com)
 * [Sharethrough](http://www.sharethrough.com)
 * [Shopify](http://www.shopify.com)

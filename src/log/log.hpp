@@ -25,6 +25,7 @@
 #include <set>
 #include <string>
 
+#include <process/future.hpp>
 #include <process/owned.hpp>
 #include <process/process.hpp>
 #include <process/shared.hpp>
@@ -33,7 +34,6 @@
 #include <stout/duration.hpp>
 #include <stout/none.hpp>
 #include <stout/option.hpp>
-#include <stout/result.hpp>
 
 #include "zookeeper/group.hpp"
 
@@ -131,21 +131,20 @@ public:
 
     // Returns all entries between the specified positions, unless
     // those positions are invalid, in which case returns an error.
-    Result<std::list<Entry> > read(
+    process::Future<std::list<Entry> > read(
         const Position& from,
-        const Position& to,
-        const process::Timeout& timeout);
+        const Position& to);
 
     // Returns the beginning position of the log from the perspective
     // of the local replica (which may be out of date if the log has
     // been opened and truncated while this replica was partitioned).
-    Position beginning();
+    process::Future<Position> beginning();
 
     // Returns the ending (i.e., last) position of the log from the
     // perspective of the local replica (which may be out of date if
     // the log has been opened and appended to while this replica was
     // partitioned).
-    Position ending();
+    process::Future<Position> ending();
 
   private:
     LogReaderProcess* process;
@@ -155,27 +154,31 @@ public:
   {
   public:
     // Creates a new writer associated with the specified log. Only
-    // one writer (local and remote) is valid at a time. A writer
-    // becomes invalid if any operation returns an error, and a new
-    // writer must be created in order perform subsequent operations.
-    Writer(Log* log, const Duration& timeout, int retries = 3);
+    // one writer (local or remote) can be valid at any point in
+    // time. A writer becomes invalid if either Writer::append or
+    // Writer::truncate return None, in which case, the writer (or
+    // another writer) must be restarted.
+    Writer(Log* log);
     ~Writer();
 
-    // Attempts to append the specified data to the log. A none result
-    // means the operation timed out, otherwise the new ending
-    // position of the log is returned or an error. Upon error a new
-    // Writer must be created.
-    Result<Position> append(
-        const std::string& data,
-        const process::Timeout& timeout);
+    // Attempts to get a promise (from the log's replicas) for
+    // exclusive writes, i.e., no other writer's will be able to
+    // perform append and truncate operations. Returns the ending
+    // position of the log or none if the promise to exclusively write
+    // could not be attained but may be retried.
+    process::Future<Option<Position> > start();
+
+    // Attempts to append the specified data to the log. Returns the
+    // new ending position of the log or 'none' if this writer has
+    // lost it's promise to exclusively write (which can be reacquired
+    // by invoking Writer::start).
+    process::Future<Option<Position> > append(const std::string& data);
 
     // Attempts to truncate the log up to but not including the
-    // specificed position. A none result means the operation timed
-    // out, otherwise the new ending position of the log is returned
-    // or an error. Upon error a new Writer must be created.
-    Result<Position> truncate(
-        const Position& to,
-        const process::Timeout& timeout);
+    // specificed position. Returns the new ending position of the log
+    // or 'none' if this writer has lost it's promise to exclusively
+    // write (which can be reacquired by invoking Writer::start).
+    process::Future<Option<Position> > truncate(const Position& to);
 
   private:
     LogWriterProcess* process;

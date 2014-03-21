@@ -100,13 +100,11 @@ Try<Resources> Containerizer::resources(const Flags& flags)
                     << "' ; defaulting to DEFAULT_MEM";
       mem = DEFAULT_MEM;
     } else {
-      mem = mem_.get().total;
-
-      // Leave 1 GB free if we have more than 1 GB, otherwise, use all!
-      // TODO(benh): Have better default scheme (e.g., % of mem not greater
-      // than 1 GB?)
-      if (mem > Gigabytes(1)) {
-        mem = mem - Gigabytes(1);
+      Bytes total = mem_.get().total;
+      if (total >= Gigabytes(2)) {
+        mem = total - Gigabytes(1); // Leave 1GB free.
+      } else {
+        mem = Bytes(total.bytes() / 2); // Use 50% of the memory.
       }
     }
 
@@ -130,12 +128,11 @@ Try<Resources> Containerizer::resources(const Flags& flags)
                    << "' ; defaulting to " << DEFAULT_DISK;
       disk = DEFAULT_DISK;
     } else {
-      disk = disk_.get();
-      // Leave 5 GB free if we have more than 10 GB, otherwise, use all!
-      // TODO(benh): Have better default scheme (e.g., % of disk not
-      // greater than 10 GB?)
-      if (disk > Gigabytes(10)) {
-        disk = disk - Gigabytes(5);
+      Bytes total = disk_.get();
+      if (total >= Gigabytes(10)) {
+        disk = total - Gigabytes(5); // Leave 5GB free.
+      } else {
+        disk = Bytes(total.bytes() / 2); // Use 50% of the disk.
       }
     }
 
@@ -235,9 +232,26 @@ map<string, string> executorEnvironment(
   // the environment variables below in case it is included.
   env["LIBPROCESS_PORT"] = "0";
 
-  // Also add MESOS_NATIVE_LIBRARY if it's not already present (and
+  // Also add MESOS_NATIVE_JAVA_LIBRARY if it's not already present (and
   // like above, we do this before the environment variables below in
   // case the framework wants to override).
+  // TODO(tillt): Adapt library towards JNI specific name once libmesos
+  // has been split.
+  if (!os::hasenv("MESOS_NATIVE_JAVA_LIBRARY")) {
+    string path =
+#ifdef __APPLE__
+      LIBDIR "/libmesos-" VERSION ".dylib";
+#else
+      LIBDIR "/libmesos-" VERSION ".so";
+#endif
+    if (os::exists(path)) {
+      env["MESOS_NATIVE_JAVA_LIBRARY"] = path;
+    }
+  }
+
+  // Also add MESOS_NATIVE_LIBRARY if it's not already present.
+  // This environment variable is kept for offering non JVM-based
+  // frameworks a more compact and JNI independent library.
   if (!os::hasenv("MESOS_NATIVE_LIBRARY")) {
     string path =
 #ifdef __APPLE__

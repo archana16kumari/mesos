@@ -35,6 +35,11 @@ class Flags : public logging::Flags
 public:
   Flags()
   {
+    add(&Flags::version,
+        "version",
+        "Show version and exit.",
+        false);
+
     add(&Flags::hostname,
         "hostname",
         "The hostname the master should advertise in ZooKeeper.\n"
@@ -50,12 +55,22 @@ public:
         "Where to store master specific files\n",
         "/tmp/mesos");
 
+    // TODO(bmahler): Add replicated log backed registry.
     add(&Flags::registry,
         "registry",
         "Persistence strategy for the registry;\n"
-        "available options are 'local' or a ZooKeeper\n"
-        "URL (i.e., 'zk://host1:port1,host2:port2,.../path')",
-        "local");
+        "available options are 'in_memory'.",
+        "in_memory");
+
+    // TODO(bmahler): Set the default to true in 0.20.0.
+    add(&Flags::registry_strict,
+        "registry_strict",
+        "Whether the Master will take actions based on the persistent\n"
+        "information stored in the Registry. Setting this to false means\n"
+        "that the Registrar will never reject the admission, readmission,\n"
+        "or removal of a slave. Consequently, 'false' can be used to\n"
+        "bootstrap the persistent state on a running cluster.",
+        false);
 
     add(&Flags::webui_dir,
         "webui_dir",
@@ -75,7 +90,7 @@ public:
         "between users. May be one of:\n"
         "  dominant_resource_fairness (drf)",
         "drf");
- 
+
     add(&Flags::framework_sorter,
         "framework_sorter",
         "Policy to use for allocating resources\n"
@@ -120,10 +135,12 @@ public:
         "Path could be of the form 'file:///path/to/file' or '/path/to/file'");
   }
 
+  bool version;
   Option<std::string> hostname;
   bool root_submissions;
   std::string work_dir;
   std::string registry;
+  bool registry_strict;
   std::string webui_dir;
   std::string whitelist;
   std::string user_sorter;

@@ -17,6 +17,7 @@ GPERFTOOLS = 3rdparty/gperftools-$(GPERFTOOLS_VERSION)
 GTEST = $(GMOCK)/gtest
 RY_HTTP_PARSER = 3rdparty/ry-http-parser-$(RY_HTTP_PARSER_VERSION)
 LIBEV = 3rdparty/libev-$(LIBEV_VERSION)
+PICOJSON = 3rdparty/picojson-$(PICOJSON_VERSION)
 
 
 # Library. It is not installable presently because most people link
@@ -44,8 +45,9 @@ libprocess_la_CPPFLAGS =		\
   -I$(srcdir)/$(STOUT)/include		\
   -I$(BOOST)				\
   -I$(GLOG)/src				\
-  -I$(LIBEV)				\
   -I$(RY_HTTP_PARSER)			\
+  -I$(LIBEV)				\
+  -I$(PICOJSON)				\
   $(AM_CPPFLAGS)
 
 libprocess_la_LIBADD =			\
@@ -61,6 +63,7 @@ endif
 # Headers.
 libprocess_la_SOURCES +=					\
   $(top_srcdir)/include/process/async.hpp			\
+  $(top_srcdir)/include/process/check.hpp			\
   $(top_srcdir)/include/process/clock.hpp			\
   $(top_srcdir)/include/process/collect.hpp			\
   $(top_srcdir)/include/process/defer.hpp			\
@@ -91,6 +94,7 @@ libprocess_la_SOURCES +=					\
   $(top_srcdir)/include/process/protobuf.hpp			\
   $(top_srcdir)/include/process/reap.hpp			\
   $(top_srcdir)/include/process/run.hpp				\
+  $(top_srcdir)/include/process/sequence.hpp			\
   $(top_srcdir)/include/process/shared.hpp			\
   $(top_srcdir)/include/process/socket.hpp			\
   $(top_srcdir)/include/process/statistics.hpp			\
@@ -113,6 +117,7 @@ tests_SOURCES =							\
   src/tests/owned_tests.cpp					\
   src/tests/process_tests.cpp					\
   src/tests/reap_tests.cpp					\
+  src/tests/sequence_tests.cpp					\
   src/tests/shared_tests.cpp					\
   src/tests/statistics_tests.cpp				\
   src/tests/subprocess_tests.cpp				\

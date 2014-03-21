@@ -35,6 +35,7 @@ GLOG = $(LIBPROCESS)/3rdparty/glog-$(GLOG_VERSION)
 GMOCK = $(LIBPROCESS)/3rdparty/gmock-$(GMOCK_VERSION)
 GTEST = $(GMOCK)/gtest
 PROTOBUF = $(LIBPROCESS)/3rdparty/protobuf-$(PROTOBUF_VERSION)
+PICOJSON = $(LIBPROCESS)/3rdparty/picojson-$(PICOJSON_VERSION)
 
 
 # Unfortunatley, 'pkglibexecdir' and 'pkglocalstatedir' are not set
@@ -82,6 +83,7 @@ MESOS_CPPFLAGS += -I$(top_srcdir)/$(STOUT)/include
 MESOS_CPPFLAGS += -I../include
 MESOS_CPPFLAGS += -I../$(BOOST)
 MESOS_CPPFLAGS += -I../$(PROTOBUF)/src
+MESOS_CPPFLAGS += -I../$(PICOJSON)
 MESOS_CPPFLAGS += -I../$(GLOG)/src
 MESOS_CPPFLAGS += -I../$(LEVELDB)/include
 
@@ -345,8 +347,12 @@ libmesos_no_3rdparty_la_LIBADD += liblog.la
 # Convenience library for building "state" abstraction in order to
 # include the leveldb headers.
 noinst_LTLIBRARIES += libstate.la
-libstate_la_SOURCES = state/leveldb.cpp state/zookeeper.cpp
+libstate_la_SOURCES =							\
+  state/in_memory.cpp							\
+  state/leveldb.cpp							\
+  state/zookeeper.cpp
 libstate_la_SOURCES +=							\
+  state/in_memory.hpp							\
   state/leveldb.hpp							\
   state/protobuf.hpp							\
   state/state.hpp							\
@@ -788,7 +794,8 @@ $(MESOS_EGG): python/setup.py $(srcdir)/python/src/mesos.py		\
 	  cp -pf $(srcdir)/python/src/mesos.py python/src;		\
 	fi
 	@LIBS="$(LIBS)" CC="$(CC)" CXX="$(CXX)"				\
-	  PYTHONPATH=$(DISTRIBUTE_EGG) $(PYTHON) python/setup.py bdist_egg
+	CFLAGS="$(PYTHON_CFLAGS)" CPPFLAGS="$(PYTHON_CPPFLAGS)"		\
+	PYTHONPATH=$(DISTRIBUTE_EGG) $(PYTHON) python/setup.py bdist_egg
 
 CLEANFILES += $(MESOS_EGG) python/build/temp.*/native/*.o python/build/lib.*/*
 
@@ -856,6 +863,7 @@ mesos_tests_SOURCES =				\
   tests/attributes_tests.cpp			\
   tests/authentication_tests.cpp		\
   tests/containerizer.cpp			\
+  tests/containerizer_tests.cpp			\
   tests/environment.cpp				\
   tests/examples_tests.cpp			\
   tests/exception_tests.cpp			\

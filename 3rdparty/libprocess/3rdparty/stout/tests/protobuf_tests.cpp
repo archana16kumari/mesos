@@ -4,6 +4,7 @@
 
 #include <string>
 
+#include <stout/gtest.hpp>
 #include <stout/json.hpp>
 #include <stout/protobuf.hpp>
 #include <stout/stringify.hpp>
@@ -16,6 +17,7 @@ using std::string;
 TEST(ProtobufTest, JSON)
 {
   tests::Message message;
+  message.set_b(true);
   message.set_str("string");
   message.set_bytes("bytes");
   message.set_int32(-1);
@@ -28,6 +30,7 @@ TEST(ProtobufTest, JSON)
   message.set_d(1.0);
   message.set_e(tests::ONE);
   message.mutable_nested()->set_str("nested");
+  message.add_repeated_bool(true);
   message.add_repeated_string("repeated_string");
   message.add_repeated_bytes("repeated_bytes");
   message.add_repeated_int32(-2);
@@ -62,6 +65,7 @@ TEST(ProtobufTest, JSON)
   // The keys are in alphabetical order.
   string expected = strings::remove(
       "{"
+      "  \"b\": true,"
       "  \"bytes\": \"bytes\","
       "  \"d\": 1,"
       "  \"e\": \"ONE\","
@@ -69,6 +73,7 @@ TEST(ProtobufTest, JSON)
       "  \"int32\": -1,"
       "  \"int64\": -1,"
       "  \"nested\": { \"str\": \"nested\"},"
+      "  \"repeated_bool\": [true],"
       "  \"repeated_bytes\": [\"repeated_bytes\"],"
       "  \"repeated_double\": [1, 2],"
       "  \"repeated_enum\": [\"TWO\"],"
@@ -92,4 +97,10 @@ TEST(ProtobufTest, JSON)
   JSON::Object object = JSON::Protobuf(message);
 
   EXPECT_EQ(expected, stringify(object));
+
+  // Test parsing too.
+  Try<tests::Message> parse = protobuf::parse<tests::Message>(object);
+  ASSERT_SOME(parse);
+
+  EXPECT_EQ(object, JSON::Protobuf(parse.get()));
 }

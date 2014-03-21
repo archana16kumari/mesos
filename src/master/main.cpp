@@ -45,7 +45,7 @@
 #include "master/registrar.hpp"
 #include "master/repairer.hpp"
 
-#include "state/leveldb.hpp"
+#include "state/in_memory.hpp"
 #include "state/protobuf.hpp"
 #include "state/storage.hpp"
 
@@ -59,6 +59,7 @@ using namespace zookeeper;
 using mesos::MasterInfo;
 
 using std::cerr;
+using std::cout;
 using std::endl;
 using std::string;
 
@@ -69,6 +70,12 @@ void usage(const char* argv0, const flags::FlagsBase& flags)
        << endl
        << "Supported options:" << endl
        << flags.usage();
+}
+
+
+void version()
+{
+  cout << "mesos" << " " << MESOS_VERSION << endl;
 }
 
 
@@ -111,6 +118,11 @@ int main(int argc, char** argv)
     exit(1);
   }
 
+  if (flags.version) {
+    version();
+    exit(0);
+  }
+
   if (help) {
     usage(argv[0], flags);
     exit(1);
@@ -144,13 +156,14 @@ int main(int argc, char** argv)
   allocator::Allocator* allocator =
     new allocator::Allocator(allocatorProcess);
 
+  if (flags.registry_strict) {
+    EXIT(1) << "Cannot run with --registry_strict; currently not supported";
+  }
+
   state::Storage* storage = NULL;
 
-  if (strings::startsWith(flags.registry, "zk://")) {
-    // TODO(benh):
-    EXIT(1) << "ZooKeeper based registry unimplemented";
-  } else if (flags.registry == "local") {
-    storage = new state::LevelDBStorage(path::join(flags.work_dir, "registry"));
+  if (flags.registry == "in_memory") {
+    storage = new state::InMemoryStorage();
   } else {
     EXIT(1) << "'" << flags.registry << "' is not a supported"
             << " option for registry persistence";
@@ -159,7 +172,7 @@ int main(int argc, char** argv)
   CHECK_NOTNULL(storage);
 
   state::protobuf::State* state = new state::protobuf::State(storage);
-  Registrar* registrar = new Registrar(state);
+  Registrar* registrar = new Registrar(flags, state);
   Repairer* repairer = new Repairer();
 
   Files files;
